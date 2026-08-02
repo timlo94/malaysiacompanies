@@ -19,8 +19,7 @@ type Company = {
 };
 
 export default function Home() {
-  const [data, setData] = useState<Company[]>([]);
-  const [total, setTotal] = useState(0);
+  const [fullData, setFullData] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [page, setPage] = useState(1);
@@ -28,10 +27,8 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [sector, setSector] = useState('All');
   
-  const [sort, setSort] = useState('rank');
+  const [sort, setSort] = useState<keyof Company>('rank');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
-
-  const [allDataForCharts, setAllDataForCharts] = useState<Company[]>([]);
 
   // Sectors for dropdown
   const sectors = [
@@ -39,36 +36,59 @@ export default function Home() {
     "Energy", "Materials", "Communication Services", "Industrials", "Real Estate", "Health Care"
   ];
 
-  const fetchTableData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/companies?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&sector=${encodeURIComponent(sector)}&sort=${sort}&order=${order}`);
-      const json = await res.json();
-      setData(json.data || []);
-      setTotal(json.meta?.total || 0);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchChartData = async () => {
-    try {
-      // Fetch top 100 for charts depending on filters, without pagination
-      const res = await fetch(`/api/companies?page=1&limit=100&search=${encodeURIComponent(search)}&sector=${encodeURIComponent(sector)}&sort=${sort}&order=${order}`);
-      const json = await res.json();
-      setAllDataForCharts(json.data || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
-    fetchTableData();
-    fetchChartData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search, sector, sort, order]);
+    const fetchStaticData = async () => {
+      setLoading(true);
+      try {
+        // In next.config.ts we set basePath to /malaysiacompanies, so static files are served there
+        const res = await fetch('/malaysiacompanies/data/companies.json');
+        const json = await res.json();
+        setFullData(json);
+      } catch (err) {
+        console.error("Failed to load static data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStaticData();
+  }, []);
+
+  // Compute filtered and sorted data
+  const filteredAndSortedData = useMemo(() => {
+    let result = fullData;
+    
+    // Filter
+    if (search || sector !== 'All') {
+      const searchLower = search.toLowerCase();
+      result = result.filter(c => {
+        const matchesSearch = c.company.toLowerCase().includes(searchLower) || c.sector.toLowerCase().includes(searchLower);
+        const matchesSector = sector === 'All' || c.sector === sector;
+        return matchesSearch && matchesSector;
+      });
+    }
+    
+    // Sort
+    result = [...result].sort((a, b) => {
+      const aVal = a[sort];
+      const bVal = b[sort];
+      
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return order === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return order === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return 0;
+    });
+    
+    return result;
+  }, [fullData, search, sector, sort, order]);
+
+  // Derived state for the UI
+  const total = filteredAndSortedData.length;
+  const data = filteredAndSortedData.slice((page - 1) * limit, page * limit);
+  const allDataForCharts = useMemo(() => filteredAndSortedData.slice(0, 100), [filteredAndSortedData]);
 
   // Chart Data Processing
   const sectorDistribution = useMemo(() => {
@@ -94,7 +114,7 @@ export default function Home() {
     return num + ' M';
   };
 
-  const handleSort = (column: string) => {
+  const handleSort = (column: keyof Company) => {
     if (sort === column) {
       setOrder(order === 'asc' ? 'desc' : 'asc');
     } else {
@@ -104,7 +124,7 @@ export default function Home() {
     setPage(1);
   };
 
-  const getSortIcon = (column: string) => {
+  const getSortIcon = (column: keyof Company) => {
     if (sort !== column) return <ArrowUpDown className="w-3 h-3 ml-1 text-slate-300" />;
     return order === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-blue-600" /> : <ArrowDown className="w-3 h-3 ml-1 text-blue-600" />;
   };
