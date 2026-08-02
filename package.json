@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "prebuild": "npx tsx scripts/export-data.ts",
+    "prebuild": "npx prisma generate && npx tsx scripts/export-data.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
